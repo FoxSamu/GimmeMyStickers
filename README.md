@@ -22,6 +22,11 @@ To build and run the bot from source:
 ## Technical Details
 I built my own Kotlin wrapper around the Telegram Bot API. I found that existing wrappers for Java and Kotlin are rather unintuitive to use, so I chose to build my own wrapper with the features I need. I'm considering extracting it into its own library and expanding it to cover the entire Bot API, but the Bot API is huge so this may take a while. Or it may never happen, don't take my word for it. :P
 
+## License
 
+Copyright &copy; 2025 Samū<br>
+All rights reserved
+
+Will add a proper open source license later.
 
 

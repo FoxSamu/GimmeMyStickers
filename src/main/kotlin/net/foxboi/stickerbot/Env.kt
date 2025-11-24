@@ -1,7 +1,7 @@
 package net.foxboi.stickerbot
 
 object Env {
-    private const val PREFIX = "STICKERBOT_"
+    private const val PREFIX = "GMS_"
 
     val token = this["TOKEN"]
     val storageDirectory = this["STORAGE_DIRECTORY", "."]

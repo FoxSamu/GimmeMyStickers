@@ -38,10 +38,17 @@ application {
 }
 
 tasks.run.configure {
+    // Load .env
     val env = Properties()
-    FileReader(file("$projectDir/.env"), Charsets.UTF_8).use {
-        env.load(it)
+    val envFile = file("$projectDir/.env")
+    if (envFile.exists()) {
+        FileReader(envFile, Charsets.UTF_8).use {
+            env.load(it)
+        }
+    } else {
+        logger.warn(".env not found, no environment variables were loaded")
     }
+
     environment(env.mapKeys { "${it.key}" })
 }
 

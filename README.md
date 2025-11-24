@@ -1,6 +1,13 @@
 # GimmeMyStickers
 GimmeMyStickers, or GMS for short, is a Telegram bot that allows you to extract files from stickers. It is currently in heavy develompent. **It does not work at all.**
 
+## WIP
+Current development status:
+- It tracks a counter per user and persists it.
+- Users can increment and decrement this counter with /incr and /decr.
+- Users can read their counter with /num.
+- It cannot download any stickers yet, it only understands counting right now. Very useful, I know.
+
 ## Usage
 To build and run the bot from source:
 1. Make sure you have a bot token. You can get one from [@BotFather](https://t.me/BotFather).

@@ -1,0 +1,50 @@
+import java.io.FileReader
+import java.util.Properties
+
+plugins {
+    kotlin("jvm") version "2.2.21"
+    kotlin("plugin.serialization") version "2.2.21"
+
+    application
+}
+
+group = "net.foxboi"
+version = "0.1"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("io.ktor:ktor-client-core:3.3.2")
+    implementation("io.ktor:ktor-client-cio:3.3.2")
+    implementation("io.ktor:ktor-client-content-negotiation:3.3.2")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.3.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+
+    runtimeOnly("org.apache.logging.log4j:log4j-slf4j2-impl:2.25.2")
+    implementation("org.apache.logging.log4j:log4j-api:2.25.2")
+    implementation("org.apache.logging.log4j:log4j-core:2.25.2")
+
+    testImplementation(kotlin("test"))
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+application {
+    mainClass = "net.foxboi.stickerbot.MainKt"
+}
+
+tasks.run.configure {
+    val env = Properties()
+    FileReader(file("$projectDir/.env"), Charsets.UTF_8).use {
+        env.load(it)
+    }
+    environment(env.mapKeys { "${it.key}" })
+}
+
+tasks.test.configure {
+    useJUnitPlatform()
+}

@@ -25,8 +25,26 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
         sessions.flush()
     }
 
+    override suspend fun onInput(bot: Bot, input: String) {
+        if (input.trim() == "stop") {
+            bot.signalStop()
+            log.info { "Stopping..." }
+        }
+
+        if (input.trim() == "halt") {
+            bot.signalStop(true)
+            log.info { "Halting..." }
+        }
+    }
+
     override suspend fun onStop(bot: Bot) {
         sessions.close()
+        log.info { "Stopped. Bye." }
+    }
+
+    override fun onHalt(bot: Bot) {
+        sessions.close()
+        log.info { "Halted. Bye." }
     }
 
     override suspend fun onMessage(bot: Bot, update: MessageUpdate) {
@@ -71,7 +89,7 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
     }
 
     override fun onException(bot: Bot, e: Throwable) {
-        e.printStackTrace()
+        log.error(e)
     }
 
     suspend fun run() {

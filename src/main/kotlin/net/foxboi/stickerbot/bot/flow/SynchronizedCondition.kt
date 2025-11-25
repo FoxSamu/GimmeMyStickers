@@ -1,37 +1,26 @@
-package net.foxboi.stickerbot.util
+package net.foxboi.stickerbot.bot.flow
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/**
- * A condition, similar to Java's `Condition`, allowing one to wait suspendingly.
- *
- */
-class Condition {
+class SynchronizedCondition {
     private val continuations = mutableListOf<CancellableContinuation<Unit>>()
-    private val mutex = Mutex()
+    private val lock = ReentrantLock()
 
     suspend fun wait() {
-        mutex.lock()
         suspendCancellableCoroutine {
-            try {
+            lock.withLock {
                 continuations += it
-            } finally {
-                mutex.unlock()
             }
-        }
-
-        if (mutex.isLocked) {
-            mutex.unlock()
         }
     }
 
-    suspend fun signal() {
-        mutex.withLock {
+    fun signal() {
+        lock.withLock {
             for (cont in continuations) {
                 cont.resume(Unit)
             }
@@ -39,8 +28,8 @@ class Condition {
         }
     }
 
-    suspend fun signalException(e: Throwable) {
-        mutex.withLock {
+    fun signalException(e: Throwable) {
+        lock.withLock {
             for (cont in continuations) {
                 cont.resumeWithException(e)
             }
@@ -48,8 +37,8 @@ class Condition {
         }
     }
 
-    suspend fun cancel(cause: Throwable? = null) {
-        mutex.withLock {
+    fun cancel(cause: Throwable? = null) {
+        lock.withLock {
             for (cont in continuations) {
                 cont.cancel(cause)
             }

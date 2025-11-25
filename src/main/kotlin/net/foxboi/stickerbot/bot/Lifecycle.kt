@@ -12,9 +12,16 @@ interface LifecycleListener {
     }
 
     /**
-     * Called on occasion by the [Bot]. This can be used to occasionally save things.
+     * Called on occasion by the [Bot]. This can be used to occasionally save things. Bot calls can be made from this method.
      */
     suspend fun onOccasion(bot: Bot) {
+
+    }
+
+    /**
+     * Called by the [Bot] when a line of input was received from the standard input. Bot calls can be made from this method.
+     */
+    suspend fun onInput(bot: Bot, input: String) {
 
     }
 
@@ -28,7 +35,7 @@ interface LifecycleListener {
 
     /**
      * Called by the [Bot] to indicate that it was requested to stop immediately via cancellation.
-     * Bot calls cannot be made from this method.
+     * Unlike [onStop], this method cannot run any coroutines and must only do the bare minimum that is necessary to halt safely.
      */
     fun onHalt(bot: Bot) {
 

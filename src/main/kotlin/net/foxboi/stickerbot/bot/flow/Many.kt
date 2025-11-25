@@ -5,12 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
-import net.foxboi.stickerbot.util.Condition
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
+import kotlin.coroutines.*
 
 /**
  * A [Publisher] of zero or more elements.
@@ -368,12 +363,13 @@ private class CollectingManySubscriber<T, I, R>(
     }
 }
 
+
 private abstract class AsyncManySubscriber<T>() : ManySubscriber<T>() {
     private val queue = mutableListOf<T>()
     private var error: Throwable? = null
     private var done = false
 
-    private val cond = Condition()
+    private val cond = SynchronizedCondition()
 
     suspend fun launch() {
         while (true) {

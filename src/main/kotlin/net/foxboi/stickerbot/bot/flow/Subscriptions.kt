@@ -3,7 +3,6 @@ package net.foxboi.stickerbot.bot.flow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import net.foxboi.stickerbot.util.Condition
 
 internal class IteratorSubscription<T>(
     val subscriber: Subscriber<T>,
@@ -223,7 +222,7 @@ internal abstract class CoroutineProduceMultipleSubscription<V, T>(
     private val producer: suspend CoroutineScope.(suspend (V) -> Unit) -> Unit
 ) : CoroutineSubscription<T>(subscriber, scope) {
     private var requests = 0L
-    private val condition = Condition()
+    private val condition = SynchronizedCondition()
 
     /**
      * Handle the reception of a new product from the producer.

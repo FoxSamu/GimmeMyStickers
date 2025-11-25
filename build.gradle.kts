@@ -1,5 +1,5 @@
 import java.io.FileReader
-import java.util.Properties
+import java.util.*
 
 plugins {
     kotlin("jvm") version "2.2.21"
@@ -50,6 +50,8 @@ tasks.run.configure {
     }
 
     environment(env.mapKeys { "${it.key}" })
+
+    standardInput = System.`in`
 }
 
 tasks.test.configure {

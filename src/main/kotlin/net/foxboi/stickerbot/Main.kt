@@ -1,5 +1,10 @@
 package net.foxboi.stickerbot
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 suspend fun main() {
-    StickerBot.run()
+    withContext(Dispatchers.Default) {
+        StickerBot.run()
+    }
 }

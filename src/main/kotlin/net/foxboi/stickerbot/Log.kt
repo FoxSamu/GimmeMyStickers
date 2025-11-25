@@ -1,3 +1,5 @@
+@file:Suppress("NOTHING_TO_INLINE")
+
 package net.foxboi.stickerbot
 
 import org.apache.logging.log4j.LogManager
@@ -74,6 +76,42 @@ class Log(val logger: Logger) {
     inline fun fatal(e: Throwable, msg: () -> String) {
         if (logger.isFatalEnabled) {
             logger.fatal(msg(), e)
+        }
+    }
+
+    inline fun trace(e: Throwable) {
+        if (logger.isTraceEnabled) {
+            logger.trace(e)
+        }
+    }
+
+    inline fun debug(e: Throwable) {
+        if (logger.isDebugEnabled) {
+            logger.debug(e)
+        }
+    }
+
+    inline fun info(e: Throwable) {
+        if (logger.isInfoEnabled) {
+            logger.info(e)
+        }
+    }
+
+    inline fun warn(e: Throwable) {
+        if (logger.isWarnEnabled) {
+            logger.warn(e)
+        }
+    }
+
+    inline fun error(e: Throwable) {
+        if (logger.isErrorEnabled) {
+            logger.error(e)
+        }
+    }
+
+    inline fun fatal(e: Throwable) {
+        if (logger.isFatalEnabled) {
+            logger.fatal(e)
         }
     }
 }

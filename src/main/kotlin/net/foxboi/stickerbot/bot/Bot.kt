@@ -1,25 +1,16 @@
 package net.foxboi.stickerbot.bot
 
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpResponse
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
-import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -29,11 +20,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.serializer
 import net.foxboi.stickerbot.Now
+import net.foxboi.stickerbot.util.Condition
+import net.foxboi.stickerbot.util.Future
+import net.foxboi.stickerbot.util.setDone
 import kotlin.concurrent.thread
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
+import kotlin.coroutines.CoroutineContext
 
 class Bot(
     private val token: String
@@ -43,20 +34,25 @@ class Bot(
     var exceptionHandler: ExceptionHandler = ExceptionPrinter
 
     var pollInterval: Long = 10L
-    var minOccasionInterval: Long = 3L
+    var occasionInterval: Long = 3L
 
-    var allowedUpdates = setOf<UpdateType>()
+    private var allowedUpdates: Set<UpdateType>? = setOf()
+    private var pauseUpdates = false
+    private val pauseUpdatesCondition = Condition()
 
+    private val initMutex = Mutex()
     private var running = false
     private var stop = false
 
-    private var ready = false
-    private val readyLock = Any()
-    private val readyContinuations = mutableListOf<Continuation<Unit>>()
+    private var ready = Future<Unit>()
 
     private var lastOccasion = -1L
 
-    private lateinit var job: Job
+    private lateinit var pollLoop: Future<Job>
+    private lateinit var occasionLoop: Future<Job>
+    private lateinit var inputLoop: Future<Job>
+    private lateinit var input: Input
+
     private lateinit var scope: CoroutineScope
 
     val json = Json {
@@ -106,8 +102,8 @@ class Bot(
         resultDeserializer: DeserializationStrategy<R>,
         input: JsonObject
     ): R {
-        if (!ready) {
-            throw IllegalStateException("Bot is not yet ready")
+        if (!ready.isSet()) {
+            throw IllegalStateException("Not yet ready")
         }
 
         val response = http.post("https://api.telegram.org/bot$token/$endpoint") {
@@ -150,21 +146,67 @@ class Bot(
     }
 
 
-
-    fun allowUpdates(first: UpdateType, vararg rest: UpdateType) {
-        allowedUpdates = setOf(first, *rest)
+    /**
+     * Allow the bot to receive only the given updates types. Each [Update] implementation except for [UnknownUpdate] has a
+     * companion object that represents the [UpdateType] belonging to that [Update] implementation.
+     *
+     * The set of allowed updates will be supplied to every update poll that follows, until the set of updates is updated
+     * again.
+     *
+     * Example usage:
+     * ```kotlin
+     * // Instructs the bot to only request MessageUpdate and EditMessageUpdate
+     * bot.allowUpdates(MessageUpdate, EditMessageUpdate)
+     * ```
+     *
+     * Note that when no update types are given, then no updates will be received.
+     */
+    fun allowUpdates(vararg types: UpdateType) {
+        allowedUpdates = setOf(*types)
     }
 
+    /**
+     * Allow the bot to receive only the given updates types. Each [Update] implementation except for [UnknownUpdate] has a
+     * companion object that represents the [UpdateType] belonging to that [Update] implementation.
+     *
+     * The set of allowed updates will be supplied to every update poll that follows, until the set of updates is updated
+     * again.
+     *
+     * Note that when the given iterable is empty, then no updates will be received.
+     */
     fun allowUpdates(types: Iterable<UpdateType>) {
         allowedUpdates = types.toSet()
     }
 
+    /**
+     * Allow the bot to receive all updates types. Some updates are by default excluded by Telegram unless explicitly requested.
+     * These updates usually require specific admin permissions to be enabled as well via BotFather. This method makes sure to
+     * explicitly request even the update types that telegram doesn't send by default.
+     */
     fun allowAllUpdates() {
         allowUpdates(UpdateType.all)
     }
 
+    /**
+     * Allow the bot to receive the default updates types. Some updates are by default excluded by Telegram unless explicitly requested.
+     * These updates usually require specific admin permissions to be enabled as well via BotFather. This method sets the bot to request
+     * only the updates that Telegram sends by default.
+     */
     fun allowDefaultUpdates() {
-        allowUpdates(emptyList())
+        allowedUpdates = null
+    }
+
+    fun pauseUpdates() {
+        pauseUpdates = true
+    }
+
+    fun resumeUpdates() {
+        pauseUpdates = false
+
+        // Signalling is a suspending action
+        scope.launch {
+            pauseUpdatesCondition.signal()
+        }
     }
 
 
@@ -194,8 +236,9 @@ class Bot(
                     put("offset", nextUpdateOffset)
                 }
 
-                if (allowedUpdates.isNotEmpty()) {
-                    put("allowed_updates", allowedUpdates.map { it.name })
+                val updates = allowedUpdates
+                if (updates != null) {
+                    put("allowed_updates", updates.map { it.name })
                 }
             }
         }
@@ -213,64 +256,61 @@ class Bot(
         }
     }
 
-    private suspend fun doReady() {
-        synchronized(readyLock) {
-            ready = true
-
-            for (cont in readyContinuations) {
-                cont.resume(Unit)
+    private fun lifecycle(action: suspend LifecycleListener.(Bot) -> Unit) {
+        scope.launch {
+            try {
+                lifecycleListener.action(this@Bot)
+            } catch (e: Throwable) {
+                exceptionHandler.onException(this@Bot, e)
             }
-
-            readyContinuations.clear()
         }
-        lifecycleListener.onReady(this@Bot)
     }
 
-    private suspend fun doStop() {
-        if (scope.isActive) {
-            lifecycleListener.onStop(this@Bot)
-        } else {
-            lifecycleListener.onHalt(this@Bot)
-        }
-
-        synchronized(readyLock) {
-            ready = false
-
-            val exc = HaltedException()
-            for (cont in readyContinuations) {
-                cont.resumeWithException(exc)
-            }
-
-            readyContinuations.clear()
+    private inline fun lifecycleImmediate(action: LifecycleListener.(Bot) -> Unit) {
+        try {
+            lifecycleListener.action(this)
+        } catch (e: Throwable) {
+            exceptionHandler.onException(this, e)
         }
     }
 
     private suspend fun doPollLoop() {
-        lastOccasion = Now.s()
         while (!stop) {
             tryCancel()
 
-            if (Now.s() > lastOccasion + minOccasionInterval) {
-                lastOccasion = Now.s()
+            if (pauseUpdates) {
+                pauseUpdatesCondition.wait()
+            } else {
+                val updates = pollUpdates(pollInterval)
 
-                lifecycleListener.onOccasion(this)
-            }
+                for (update in updates) {
+                    tryCancel()
 
-            val updates = pollUpdates(pollInterval)
-
-            for (update in updates) {
-                tryCancel()
-
-                doGuarded {
-                    updateListener.onUpdate(this, update)
+                    doGuarded {
+                        updateListener.onUpdate(this, update)
+                    }
                 }
             }
         }
     }
 
-    private fun ensureRunning() {
-        if (!running) {
-            throw IllegalStateException("Bot not running")
+    private suspend fun doOccasionLoop() {
+        lastOccasion = Now.s()
+        while (!stop) {
+            tryCancel()
+
+            lifecycle { onOccasion(it) }
+            delay(occasionInterval * 1000)
+        }
+    }
+
+    private suspend fun doInputLoop() {
+        while (!stop) {
+            tryCancel()
+
+            val ln = input.getlnOrNull() ?: return
+
+            lifecycle { onInput(it, ln) }
         }
     }
 
@@ -280,26 +320,73 @@ class Bot(
      * or until external influence stops the calling coroutine.
      */
     suspend fun run() {
-        if (running) {
-            throw IllegalStateException("Already running")
+        // Initialise
+        // --------------------
+
+        // This happens in a Mutex so that upon a race condition of two run calls, only one ever gets to succeed.
+        // Once out of the Mutex, running is true so the next run call to get the Mutex will throw.
+        initMutex.withLock {
+            if (running) {
+                throw IllegalStateException("Already running")
+            }
+
+            scope = CoroutineScope(currentCoroutineContext())
+
+            pollLoop = Future()
+            occasionLoop = Future()
+            inputLoop = Future()
+            input = Input()
+
+            running = true
         }
 
-        running = true
+        try {
+            // Launch
+            // --------------------
 
-        coroutineScope {
-            job = launch {
-                scope = this
+            // Update loop runs the long polling to the Telegram API
+            pollLoop.set(scope.launch {
+                waitReady()
+                doPollLoop()
+            })
 
-                try {
-                    doReady()
-                    doPollLoop()
-                } finally {
-                    // Do this in a finally block to ensure that they happen even when cancelling
-                    doStop()
-                    stop = false
-                    running = false
-                }
+            // Occasion loop runs occasional lifecycle calls
+            occasionLoop.set(scope.launch {
+                waitReady()
+                doOccasionLoop()
+            })
+
+            // Input loop reads console input
+            inputLoop.set(scope.launch {
+                waitReady()
+                doInputLoop()
+            })
+
+
+            // Signal ready
+            // --------------------
+            ready.setDone()
+
+
+            // Run lifecycle
+            // --------------------
+            try {
+                lifecycle { onReady(it) }
+                join()
+                lifecycle { onStop(it) }
+            } catch (e: CancellationException) {
+                lifecycleImmediate { onHalt(it) }
+                throw e
             }
+        } finally {
+            // Cleanup
+            // --------------------
+
+            // Reinitialise what we need in the second round
+            ready = Future()
+
+            stop = false
+            running = false
         }
     }
 
@@ -315,6 +402,17 @@ class Bot(
     }
 
     /**
+     * Starts the bot's poll loop in a blocking manner, blocking the current thread from execution until the bot stops.
+     * This method will not return until another thread stops the bot, until the bot stops itself, or until
+     * external influence stops the calling thread.
+     */
+    fun runBlocking(context: CoroutineContext) {
+        runBlocking(context) {
+            run()
+        }
+    }
+
+    /**
      * Starts the bot's poll loop on a new thread, as by calling [runBlocking] on a new thread.
      * This method will return the started thread.
      */
@@ -323,32 +421,40 @@ class Bot(
     }
 
     /**
+     * Starts the bot's poll loop on a new thread, as by calling [runBlocking] on a new thread.
+     * This method will return the started thread.
+     */
+    fun runAsync(context: CoroutineContext): Thread = thread {
+        runBlocking(context)
+    }
+
+    /**
      * Suspends until the bot is in a ready state. Calls cannot be made using the bot until a ready state is reached.
-     * When the bot is halted before it is ready, this method may throw a [HaltedException].
+     *
+     * When this method is called before the bot is started, the method will suspend indefinitely until the bot is started.
      */
     suspend fun waitReady() {
-        ensureRunning()
-
-        return suspendCoroutine { cont ->
-            synchronized(readyLock) {
-                if (ready) {
-                    cont.resume(Unit)
-                }
-
-                readyContinuations += cont
-            }
-        }
-
+        ready.get()
     }
 
     /**
      * Blocks until the bot is in a ready state. Calls cannot be made using the bot until a ready state is reached.
-     * When the bot is halted before it is ready, this method may throw a [HaltedException].
+     *
+     * When this method is called before the bot is started, the method will block indefinitely until the bot is started.
      */
     fun waitReadyBlocking() {
-        ensureRunning()
-
         runBlocking {
+            waitReady()
+        }
+    }
+
+    /**
+     * Blocks until the bot is in a ready state. Calls cannot be made using the bot until a ready state is reached.
+     *
+     * When this method is called before the bot is started, the method will block indefinitely until the bot is started.
+     */
+    fun waitReadyBlocking(context: CoroutineContext) {
+        runBlocking(context) {
             waitReady()
         }
     }
@@ -357,14 +463,24 @@ class Bot(
      * Suspends until the bot finishes. If no [stop] has been called, this method will not return until some other
      * coroutine or thread stops the bot, until the bot stops itself, or until external influence stops the calling
      * coroutine.
+     *
+     * If the bot is not running, this method will immediately return, even if the bot was never started.
      */
     suspend fun join() {
-        job.join()
+        if (!running) {
+            return
+        }
+
+        pollLoop.get().join()
+        occasionLoop.get().join()
+        inputLoop.get().join()
     }
 
     /**
      * Blocks the thread until the bot finishes. If no [stop] has been called, this method will not return until some
      * other thread stops the bot, or until the bot stops itself, or until external influence stops the calling thread.
+     *
+     * If the bot is not running, this method will immediately return, even if the bot was never started.
      */
     fun joinBlocking() {
         runBlocking {
@@ -373,16 +489,78 @@ class Bot(
     }
 
     /**
+     * Blocks the thread until the bot finishes. If no [stop] has been called, this method will not return until some
+     * other thread stops the bot, or until the bot stops itself, or until external influence stops the calling thread.
+     *
+     * If the bot is not running, this method will immediately return, even if the bot was never started.
+     */
+    fun joinBlocking(context: CoroutineContext) {
+        runBlocking(context) {
+            join()
+        }
+    }
+
+    /**
      * Signals the bot to stop. When `halt` is set to `true`, the bot's coroutine will be halted immediately.
      * When `halt` is omitted or set to `false`, the bot will process updates once more and gracefully shut down.
      *
+     * This method suspends until the bot is ready, since the bot cannot be stopped before it is ready. If the bot is not running,
+     * then this method will return immediately.
+     *
      * @param halt Whether to cancel the bot's coroutine immediately.
      */
-    fun signalStop(halt: Boolean = false) {
+    suspend fun signalStop(halt: Boolean = false) {
+        if (!running) {
+            return
+        }
+
+        waitReady()
+
         stop = true
+        input.stop()
 
         if (halt) {
-            job.cancel()
+            pollLoop.get().cancel()
+            occasionLoop.get().cancel()
+            inputLoop.get().cancel()
+        }
+    }
+
+    /**
+     * Signals the bot to stop. When `halt` is set to `true`, the bot's coroutine will be halted immediately.
+     * When `halt` is omitted or set to `false`, the bot will process updates once more and gracefully shut down.
+     *
+     * This method suspends until the bot is ready, since the bot cannot be stopped before it is ready. If the bot is not running,
+     * then this method will return immediately.
+     *
+     * @param halt Whether to cancel the bot's coroutine immediately.
+     */
+    fun signalStopBlocking(halt: Boolean = false) {
+        if (!running) {
+            return
+        }
+
+        runBlocking {
+            signalStop(halt)
+        }
+    }
+
+    /**
+     * Signals the bot to stop. When `halt` is set to `true`, the bot's coroutine will be halted immediately.
+     * When `halt` is omitted or set to `false`, the bot will process updates once more and gracefully shut down.
+     *
+     * This method suspends until the bot is ready, since the bot cannot be stopped before it is ready. If the bot is not running,
+     * then this method will return immediately.
+     *
+     * @param halt Whether to cancel the bot's coroutine immediately.
+     */
+    fun signalStopBlocking(context: CoroutineContext, halt: Boolean = false) {
+        if (!running) {
+            return
+        }
+
+        runBlocking(context) {
+            signalStop(halt)
         }
     }
 
@@ -402,10 +580,18 @@ class Bot(
      * @param halt Whether to cancel the bot's coroutine immediately.
      */
     fun stopBlocking(halt: Boolean = false) {
-        signalStop(halt)
+        signalStopBlocking(halt)
         joinBlocking()
     }
 
-
+    /**
+     * Signals the bot to stop, as per [signalStop], and then blocks until the bot has stopped, as per [joinBlocking].
+     *
+     * @param halt Whether to cancel the bot's coroutine immediately.
+     */
+    fun stopBlocking(context: CoroutineContext, halt: Boolean = false) {
+        signalStopBlocking(context, halt)
+        joinBlocking(context)
+    }
 }
 

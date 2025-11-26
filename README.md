@@ -3,10 +3,15 @@ GimmeMyStickers, or GMS for short, is a Telegram bot that allows you to extract 
 
 ## WIP
 Current development status:
+
+- You can send it a sticker and it will send you the file of that sticker
+  as a `.webp`.
+- It will send `.tgs` and `.webm` stickers with the `.webp` extension and content type, but their original file data.
+
+Additionally:
 - It tracks a counter per user and persists it.
 - Users can increment and decrement this counter with /incr and /decr.
 - Users can read their counter with /num.
-- It cannot download any stickers yet, it only understands counting right now. Very useful, I know.
 
 ## Usage
 To build and run the bot from source:

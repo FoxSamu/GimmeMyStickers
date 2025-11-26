@@ -5,12 +5,17 @@ import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.io.Source
+import kotlinx.io.buffered
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -96,6 +101,61 @@ class Bot(
         @SerialName("parameters")
         val parameters: JsonElement? = null,
     )
+
+    suspend fun <R> pull(
+        filePath: String,
+        handler: (Source) -> R
+    ): R {
+        if (!ready.isSet()) {
+            throw IllegalStateException("Not yet ready")
+        }
+
+        val response = http.get("https://api.telegram.org/file/bot$token/$filePath")
+
+        if (!response.status.isSuccess()) {
+            throw HttpException(response.status.value, response.status.description)
+        }
+
+        return withContext(Dispatchers.IO) {
+            response.bodyAsChannel().asSource().buffered().use {
+                handler(it)
+            }
+        }
+    }
+
+    suspend fun <R> push(
+        endpoint: String,
+        resultDeserializer: DeserializationStrategy<R>,
+        push: PushBuilder.() -> Unit
+    ): R {
+        if (!ready.isSet()) {
+            throw IllegalStateException("Not yet ready")
+        }
+
+        val response = http.post("https://api.telegram.org/bot$token/$endpoint") {
+            setBody(
+                MultiPartFormDataContent(
+                    withContext(Dispatchers.IO) {
+                        formData {
+                            PushBuilder(this, json).push()
+                        }
+                    }
+                )
+            )
+        }
+        return handleResponse(response, resultDeserializer)
+    }
+
+    suspend inline fun <reified R> push(
+        endpoint: String,
+        noinline push: PushBuilder.() -> Unit
+    ): R {
+        return push(
+            endpoint,
+            json.serializersModule.serializer(),
+            push
+        )
+    }
 
     suspend fun <R> call(
         endpoint: String,

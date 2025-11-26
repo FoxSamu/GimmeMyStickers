@@ -1,7 +1,10 @@
 package net.foxboi.stickerbot
 
+import io.ktor.http.*
 import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import net.foxboi.stickerbot.bot.*
+import net.foxboi.stickerbot.bot.flow.Upload
 import net.foxboi.stickerbot.session.Session
 import net.foxboi.stickerbot.storage.FileStorage
 
@@ -65,9 +68,7 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
                 text = "Incremented! Your number is now: ${session.number()}",
                 directMessagesTopicId = msg.directMessagesTopic?.topicId
             )
-        }
-
-        if (msg.text == "/decr") {
+        } else if (msg.text == "/decr") {
             session.decrement()
 
             bot.sendMessage(
@@ -75,20 +76,52 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
                 text = "Decremented! Your number is now: ${session.number()}",
                 directMessagesTopicId = msg.directMessagesTopic?.topicId
             )
-        }
-
-        if (msg.text == "/num") {
+        } else if (msg.text == "/num") {
             bot.sendMessage(
                 chatId = chat.id,
                 text = "Your number is: ${session.number()}",
                 directMessagesTopicId = msg.directMessagesTopic?.topicId
             )
+        } else if (msg.sticker != null) {
+            val sticker = msg.sticker
+
+            log.info { "Received sticker" }
+            log.info { "File id = ${sticker.fileId}" }
+            log.info { "File unique id = ${sticker.fileUniqueId}" }
+
+            val file = bot.getFile(sticker)
+            if (file.filePath != null) {
+                bot.pull(file.filePath) { src ->
+                    SystemFileSystem.createDirectories(Path(Env.storageDirectory, "./files"))
+
+                    SystemFileSystem.sink(Path(Env.storageDirectory, "./files/${file.fileUniqueId}.webp")).use { snk ->
+                        src.transferTo(snk)
+                    }
+                }
+
+                bot.sendDocument(
+                    chatId = chat.id,
+                    file = Upload(
+                        "${file.fileUniqueId}.webp",
+                        ContentType.Image.WEBP
+                    ) { snk ->
+                        SystemFileSystem.source(Path(Env.storageDirectory, "./files/${file.fileUniqueId}.webp")).use { src ->
+                            snk.transferFrom(src)
+                        }
+                    },
+                    caption = "Here is your sticker",
+                    disableContentTypeDetection = true
+                )
+            }
         }
+
+
 
         session.save()
     }
 
     override fun onException(bot: Bot, e: Throwable) {
+        e.printStackTrace()
         log.error(e)
     }
 

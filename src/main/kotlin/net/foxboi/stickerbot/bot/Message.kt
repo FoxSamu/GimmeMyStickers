@@ -2,6 +2,7 @@ package net.foxboi.stickerbot.bot
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import net.foxboi.stickerbot.bot.flow.Upload
 import net.foxboi.stickerbot.util.DelegateSerializer
 
 
@@ -33,6 +34,40 @@ suspend fun Bot.sendMessage(
         putMaybe("protect_content", protectContent)
         putMaybe("message_effect_id", messageEffectId)
         putMaybe("reply_parameters", replyParameters)
+    }
+}
+
+suspend fun Bot.sendDocument(
+    chatId: IdOrName,
+    fileId: String,
+    caption: String? = null,
+    businessConnectionId: String? = null,
+    messageThreadId: Id? = null,
+): Message {
+    return call("sendDocument") {
+        put("chat_id", chatId)
+        put("document", fileId)
+        putMaybe("caption", caption)
+        putMaybe("business_connection_id", businessConnectionId)
+        putMaybe("message_thread_id", messageThreadId)
+    }
+}
+
+suspend fun Bot.sendDocument(
+    chatId: IdOrName,
+    file: Upload,
+    caption: String? = null,
+    businessConnectionId: String? = null,
+    messageThreadId: Id? = null,
+    disableContentTypeDetection: Boolean? = null
+): Message {
+    return push("sendDocument") {
+        put("chat_id", chatId)
+        put("document", file)
+        putMaybe("caption", caption)
+        putMaybe("business_connection_id", businessConnectionId)
+        putMaybe("message_thread_id", messageThreadId)
+        putMaybe("disable_content_type_detection", disableContentTypeDetection)
     }
 }
 

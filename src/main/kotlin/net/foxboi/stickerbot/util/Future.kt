@@ -60,20 +60,20 @@ class Future<T> {
         }
     }
 
-    fun isSet(): Boolean {
-        return set
+    suspend fun isSet(): Boolean {
+        return mutex.withLock { set }
     }
 
-    fun isCancelled(): Boolean {
-        return cancelled
+    suspend fun isCancelled(): Boolean {
+        return mutex.withLock { cancelled }
     }
 
-    fun tryGet(): T? {
-        return value
+    suspend fun tryGet(): T? {
+        return mutex.withLock { value }
     }
 
-    fun tryGetException(): Throwable? {
-        return exception
+    suspend fun tryGetException(): Throwable? {
+        return mutex.withLock { exception }
     }
 }
 

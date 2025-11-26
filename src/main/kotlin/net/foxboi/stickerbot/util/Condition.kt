@@ -17,43 +17,51 @@ class Condition {
 
     suspend fun wait() {
         mutex.lock()
-        suspendCancellableCoroutine {
-            try {
-                continuations += it
-            } finally {
+        try {
+            suspendCancellableCoroutine {
+                try {
+                    continuations += it
+                } finally {
+                    mutex.unlock()
+                }
+            }
+        } finally {
+            if (mutex.isLocked) {
                 mutex.unlock()
             }
-        }
-
-        if (mutex.isLocked) {
-            mutex.unlock()
         }
     }
 
     suspend fun signal() {
-        mutex.withLock {
-            for (cont in continuations) {
-                cont.resume(Unit)
-            }
+        val conts = mutex.withLock {
+            val conts = continuations.toList()
             continuations.clear()
+            conts
+        }
+        for (cont in conts) {
+            cont.resume(Unit)
         }
     }
 
     suspend fun signalException(e: Throwable) {
-        mutex.withLock {
-            for (cont in continuations) {
-                cont.resumeWithException(e)
-            }
+        val conts = mutex.withLock {
+            val conts = continuations.toList()
             continuations.clear()
+            conts
+        }
+        for (cont in conts) {
+            cont.resumeWithException(e)
         }
     }
 
     suspend fun cancel(cause: Throwable? = null) {
-        mutex.withLock {
-            for (cont in continuations) {
-                cont.cancel(cause)
-            }
+        val conts = mutex.withLock {
+            val conts = continuations.toList()
             continuations.clear()
+            conts
+        }
+        for (cont in conts) {
+            cont.cancel(cause)
         }
     }
 }

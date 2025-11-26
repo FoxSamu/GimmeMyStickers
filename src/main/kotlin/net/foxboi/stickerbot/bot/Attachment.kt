@@ -14,6 +14,18 @@ internal const val THUMBNAIL = "thumbnail"
 internal const val FILE_NAME = "file_name"
 internal const val MIME_TYPE = "mime_type"
 
+suspend fun Bot.getFile(
+    fileId: String
+): File {
+    return call("getFile") {
+        put("file_id", fileId)
+    }
+}
+
+suspend fun Bot.getFile(
+    file: FileAttachment
+) = getFile(fileId = file.fileId)
+
 interface Attachment
 
 interface FileAttachment : Attachment {

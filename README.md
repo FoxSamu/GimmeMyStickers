@@ -1,17 +1,16 @@
 # GimmeMyStickers
-GimmeMyStickers, or GMS for short, is a Telegram bot that allows you to extract files from stickers. It is currently in heavy develompent. **It does not work at all.**
+
+GimmeMyStickers, or GMS for short, is a Telegram bot that allows you to convert stickers to files, which you can then download. It is currently in
+heavy develompent.
 
 ## WIP
 Current development status:
 
-- You can send it a sticker and it will send you the file of that sticker
-  as a `.webp`.
-- It will send `.tgs` and `.webm` stickers with the `.webp` extension and content type, but their original file data.
-
-Additionally:
-- It tracks a counter per user and persists it.
-- Users can increment and decrement this counter with /incr and /decr.
-- Users can read their counter with /num.
+- You can send it a sticker and it will convert this sticker to the desired format.
+- The desired format can be set with commands.
+- It will treat `.tgs` and `.webm` stickers as `.webp` and tries to convert them, without success.
+- When it reads `stop` from stdin, it will stop.
+- When it reads `halt` from stdin, it will stop faster.
 
 ## Usage
 To build and run the bot from source:

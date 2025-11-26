@@ -14,8 +14,13 @@ abstract class Storable(
     val dirty get() = changed
 
     @Synchronized
-    fun markDirty() {
+    protected fun markDirty() {
         changed = true
+    }
+
+    @Synchronized
+    protected fun markClean() {
+        changed = false
     }
 
     @Synchronized

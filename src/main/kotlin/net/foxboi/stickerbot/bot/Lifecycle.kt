@@ -1,7 +1,7 @@
 package net.foxboi.stickerbot.bot
 
 /**
- * Listener interface for lifecycle events of a [Bot].
+ * Listener interface for lifecycle events of a [Bot]. Set [Bot.lifecycleListener] to a [LifecycleListener] to receive lifecycle events.
  */
 interface LifecycleListener {
     /**
@@ -13,6 +13,7 @@ interface LifecycleListener {
 
     /**
      * Called on occasion by the [Bot]. This can be used to occasionally save things. Bot calls can be made from this method.
+     * The interval between calls to this method can be set with [Bot.occasionInterval].
      */
     suspend fun onOccasion(bot: Bot) {
 
@@ -26,18 +27,10 @@ interface LifecycleListener {
     }
 
     /**
-     * Called by the [Bot] to indicate that it was requested to stop gracefully, with no immediate cancellation.
-     * Bot calls can still be made from this method.
+     * Called by the [Bot] to indicate that it has stopped.
+     * Bot calls can still be made from this method, but the bot will not poll any new updates and will terminate once this method returns.
      */
     suspend fun onStop(bot: Bot) {
-
-    }
-
-    /**
-     * Called by the [Bot] to indicate that it was requested to stop immediately via cancellation.
-     * Unlike [onStop], this method cannot run any coroutines and must only do the bare minimum that is necessary to halt safely.
-     */
-    fun onHalt(bot: Bot) {
 
     }
 }

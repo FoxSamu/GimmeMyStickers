@@ -1,13 +1,11 @@
 package net.foxboi.stickerbot.bot
 
+import kotlinx.io.Buffer
+import kotlinx.io.readByteString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.JsonTransformingSerializer
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.*
 import net.foxboi.stickerbot.util.DelegateSerializer
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -88,6 +86,12 @@ sealed interface IdOrName {
 data class Id(
     override val id: Long
 ) : IdOrName {
+    val bytes by lazy {
+        val buf = Buffer()
+        buf.writeLong(id)
+        buf.readByteString()
+    }
+
     override fun toString(): String {
         return "[${id.toHexString()}]"
     }

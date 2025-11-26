@@ -2,20 +2,27 @@ package net.foxboi.stickerbot
 
 import io.ktor.http.*
 import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 import net.foxboi.stickerbot.bot.*
-import net.foxboi.stickerbot.bot.flow.Upload
-import net.foxboi.stickerbot.session.Session
+import net.foxboi.stickerbot.sticker.JpegConverter
+import net.foxboi.stickerbot.sticker.PngConverter
+import net.foxboi.stickerbot.sticker.StickerConverter
+import net.foxboi.stickerbot.sticker.StickerFiles
 import net.foxboi.stickerbot.storage.FileStorage
+import java.security.MessageDigest
+import kotlin.io.encoding.Base64
 
 object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
     val log = Log
 
-    val sessions = FileStorage(
+    val sessions = FileStorage<Id, Session>(
         root = Path(Env.storageDirectory, "./sessions"),
-        keyToPath = Session::filePath,
-        factory = ::Session,
+        keyToPath = { id -> hashUserId(id) },
+        factory = { _, loc -> Session(loc) },
         maxCached = Env.maxCachedSessions
+    )
+
+    val stickers = StickerFiles(
+        root = Path(Env.storageDirectory, "./stickers")
     )
 
     override suspend fun onReady(bot: Bot) {
@@ -45,11 +52,6 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
         log.info { "Stopped. Bye." }
     }
 
-    override fun onHalt(bot: Bot) {
-        sessions.close()
-        log.info { "Halted. Bye." }
-    }
-
     override suspend fun onMessage(bot: Bot, update: MessageUpdate) {
         val msg = update.message
         val chat = update.message.chat
@@ -60,64 +62,126 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
 
         val session = sessions.get(msg.from.id)
 
-        if (msg.text == "/incr") {
-            session.increment()
-
-            bot.sendMessage(
-                chatId = chat.id,
-                text = "Incremented! Your number is now: ${session.number()}",
-                directMessagesTopicId = msg.directMessagesTopic?.topicId
-            )
-        } else if (msg.text == "/decr") {
-            session.decrement()
-
-            bot.sendMessage(
-                chatId = chat.id,
-                text = "Decremented! Your number is now: ${session.number()}",
-                directMessagesTopicId = msg.directMessagesTopic?.topicId
-            )
-        } else if (msg.text == "/num") {
-            bot.sendMessage(
-                chatId = chat.id,
-                text = "Your number is: ${session.number()}",
-                directMessagesTopicId = msg.directMessagesTopic?.topicId
-            )
-        } else if (msg.sticker != null) {
+        if (msg.sticker != null) {
             val sticker = msg.sticker
-
-            log.info { "Received sticker" }
-            log.info { "File id = ${sticker.fileId}" }
-            log.info { "File unique id = ${sticker.fileUniqueId}" }
 
             val file = bot.getFile(sticker)
             if (file.filePath != null) {
-                bot.pull(file.filePath) { src ->
-                    SystemFileSystem.createDirectories(Path(Env.storageDirectory, "./files"))
-
-                    SystemFileSystem.sink(Path(Env.storageDirectory, "./files/${file.fileUniqueId}.webp")).use { snk ->
-                        src.transferTo(snk)
-                    }
+                stickers.saveIfNotExists("${file.fileUniqueId}.webp") { snk ->
+                    snk.transferFrom(bot.pull(file.filePath))
                 }
 
-                bot.sendDocument(
-                    chatId = chat.id,
-                    file = Upload(
-                        "${file.fileUniqueId}.webp",
-                        ContentType.Image.WEBP
-                    ) { snk ->
-                        SystemFileSystem.source(Path(Env.storageDirectory, "./files/${file.fileUniqueId}.webp")).use { src ->
-                            snk.transferFrom(src)
-                        }
-                    },
-                    caption = "Here is your sticker",
-                    disableContentTypeDetection = true
-                )
+                if (!session.wantsPng() && !session.wantsJpeg() && !session.wantsBmp() && !session.wantsWebp()) {
+                    session.wants(png = true)
+                }
+
+                val filename = session.fileName()
+
+                if (session.wantsPng()) {
+                    convertAndSend(bot, chat.id, file.fileUniqueId, ".png", ContentType.Image.PNG, filename, PngConverter)
+                }
+
+                if (session.wantsJpeg()) {
+                    convertAndSend(bot, chat.id, file.fileUniqueId, ".jpeg", ContentType.Image.JPEG, filename, JpegConverter)
+                }
+
+                if (session.wantsBmp()) {
+                    convertAndSend(bot, chat.id, file.fileUniqueId, ".bmp", ContentType.Image.BMP, filename, JpegConverter)
+                }
+
+                if (session.wantsWebp()) {
+                    convertAndSend(bot, chat.id, file.fileUniqueId, ".webp", ContentType.Image.WEBP, filename, null)
+                }
+
+                session.incrementFileCounter()
             }
+        } else when (msg.text) {
+            "/png" -> preference(bot, chat) { session.wants(png = true) }
+            "/jpeg" -> preference(bot, chat) { session.wants(jpeg = true) }
+            "/webp" -> preference(bot, chat) { session.wants(webp = true) }
+            "/bmp" -> preference(bot, chat) { session.wants(bmp = true) }
+            "/all" -> preference(bot, chat) { session.wants(png = true, jpeg = true, webp = true, bmp = true) }
+            "/help" -> help(bot, chat, session)
+            "/start" -> start(bot, chat)
         }
 
-
-
         session.save()
+    }
+
+    private suspend fun start(bot: Bot, chat: Chat) {
+        bot.sendMessage(
+            chat.id,
+            """
+                Hi! Welcome to the GimmeMyStickers bot. Send me a sticker and I will send it back as a file. Send me /help for more info.
+            """.trimIndent()
+        )
+    }
+
+    private suspend fun help(bot: Bot, chat: Chat, session: Session) {
+        val pref = mutableListOf<String>()
+        if (session.wantsPng()) {
+            pref += "PNG"
+        }
+        if (session.wantsJpeg()) {
+            pref += "JPEG"
+        }
+        if (session.wantsBmp()) {
+            pref += "BMP"
+        }
+        if (session.wantsWebp()) {
+            pref += "WEBP"
+        }
+
+        bot.sendMessage(
+            chat.id,
+            """
+                Hi! Welcome to the GimmeMyStickers bot. Send me a sticker and I will send it back as a file.
+                Currently, you will receive your stickers as: ${pref.joinToString()}.
+                
+                **The following commands are available:**
+                /png: Get subsequent stickers stickers as PNG.
+                /jpeg: Get subsequent stickers stickers as JPEG.
+                /bmp: Get subsequent stickers stickers as BMP.
+                /webp: Get subsequent stickers stickers as WEBP.
+                /all: Get subsequent stickers stickers in every format.
+                /help: Receive this help message.
+                
+                **About:**
+                GimmeMyStickers is a free and open source Telegram bot that converts stickers to files so you can download them. It does not send advertismenets or any other unwanted messages and has no paid features.
+            """.trimIndent()
+        )
+    }
+
+    private suspend inline fun preference(bot: Bot, chat: Chat, config: () -> Unit) {
+        config()
+        bot.sendMessage(chat.id, "Your preferences have been updated.")
+    }
+
+    private suspend fun convertAndSend(
+        bot: Bot,
+        chatId: Id,
+        fileId: String,
+        extension: String,
+        mime: ContentType,
+        filename: String,
+        conv: StickerConverter?
+    ) {
+        if (conv != null) {
+            stickers.convertIfNotExists("${fileId}.webp", "$fileId$extension", conv)
+        }
+
+        val upload = stickers.upload("$fileId$extension", mime, "$filename$extension")
+
+        bot.sendDocument(
+            chatId = chatId,
+            file = upload,
+            disableContentTypeDetection = true
+        )
+    }
+
+    private fun hashUserId(id: Id): String {
+        val sha = MessageDigest.getInstance("SHA256").digest(id.bytes.toByteArray())
+        return Base64.UrlSafe.encode(sha)
     }
 
     override fun onException(bot: Bot, e: Throwable) {

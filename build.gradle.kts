@@ -80,6 +80,7 @@ tasks.run.configure {
         logger.warn(".env not found, no environment variables were loaded")
     }
 
+    environment("GMS_STORAGE_DIRECTORY", "$projectDir/run")
     environment(env.mapKeys { "${it.key}" })
 
     standardInput = System.`in`

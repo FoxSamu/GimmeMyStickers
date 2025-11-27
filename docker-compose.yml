@@ -3,3 +3,8 @@ services:
     build: .
     env_file:
       - .env
+    volumes:
+      - gms:/data
+
+volumes:
+  gms:

@@ -65,7 +65,7 @@ kotlin {
 }
 
 application {
-    mainClass = "net.foxboi.stickerbot.MainKt"
+    mainClass = "net.foxboi.gms.MainKt"
 }
 
 tasks.run.configure {
@@ -110,7 +110,7 @@ tasks.register("buildInfo") {
 
         file.writeText(
             """
-            package net.foxboi.stickerbot
+            package net.foxboi.gms
             
             object BuildInfo {
                 const val GROUP = "$group"

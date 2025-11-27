@@ -5,28 +5,39 @@ package net.foxboi.stickerbot.util
 import kotlinx.coroutines.flow.*
 
 /**
- * A gate is a synchronization structure that allows coroutines to [wait] until the gate is opened through a call to [open]. Coroutines that call
+ * A gate is a [Checkpoint] that allows coroutines to [wait] until the gate is opened through a call to [open]. Coroutines that call
  * [wait] after a call to [open] will not suspend. A gate stores a single value, which is assigned with a call to [open] and returned from [wait].
- * Note that a gate cannot be closed. Once it's open, it cannot be opened a second time and its assigned value is frozen.
  *
- * [Gate] is similar to [Signal] in the sense that it allows multiple coroutines to wait for a call from elsewhere. However, unlike a signal, a gate
- * does not allow multiple "calls from elsewhere" and instead lets all future coroutines continue immediately. Additionally, a gate has a state,
- * whereas a signal does not.
+ * Once opened, a gate can be closed through a call to [close]. Calling [close] will discard the stored value and future calls to [wait] will suspend
+ * until the gate is opened again.
  *
- * A gate is also similar to a [java.util.concurrent.CompletableFuture] as it allows coroutines to wait for a value that is set later. However, [Gate]
- * is much simpler and only implements a suspending call to await the result. It is merely meant as a synchronization structure, not as a future.
- *
- * One may see a gate as an unfinished road.
- * It is closed by default as it is unfinished. Traffic (coroutines calling [wait]) has to wait for the road to be finished.
- * Once the road is finished ([open]), it becomes available for all traffic. Future traffic no longer needs to wait.
+ * A gate is similar to a [java.util.concurrent.CompletableFuture] as it allows coroutines to wait for a value that is set later. However, [Gate]
+ * implements this behaviour in a suspending manner, and allows the value to be unset again.
  */
-class Gate<T> {
-    private val flow = MutableStateFlow<State<T>>(Closed)
+class Gate<T> private constructor(state: State<T>) : Checkpoint<T> {
+    private val flow = MutableStateFlow<State<T>>(state)
+
+    /**
+     * Creates a gate that is initially closed.
+     */
+    constructor() : this(Closed)
+
+    /**
+     * Creates a gate that is initially open.
+     *
+     * @param value The value that is returned from [wait] while the gate is open.
+     */
+    constructor(value: T) : this(Open(value))
 
     /**
      * A flag indicating whether the gate has been opened.
      */
     val opened get() = flow.value is Open<T>
+
+    /**
+     * A flag indicating whether the gate has been closed.
+     */
+    val closed get() = flow.value is Closed
 
     /**
      * The value associated to the gate, or `null` if the gate is closed.
@@ -46,13 +57,22 @@ class Gate<T> {
      * @return The value set when the gate was opened.
      * @throws kotlinx.coroutines.CancellationException When the calling coroutine is cancelled during the wait.
      */
-    suspend fun wait(): T {
-        val it = flow.dropWhile { it is Closed }.first() as Open<T>
+    override suspend fun wait(): T {
+        val it = flow.dropWhile { it !is Open }.first() as Open<T>
         return it.value
     }
 
     /**
-     * Opens the gate, assigning the given value to the open gate. Coroutines that called [wait] will be continued the given value is returned
+     * Suspends until the gate is closed by a call to [close] or [tryClose]. If the gate is already closed, this method will return immediately.
+     *
+     * @throws kotlinx.coroutines.CancellationException When the calling coroutine is cancelled during the wait.
+     */
+    suspend fun waitClosed() {
+        flow.dropWhile { it !is Closed }.first()
+    }
+
+    /**
+     * Opens the gate, assigning the given value to the open gate. Coroutines that called [wait] will be continued and the given value is returned
      * from the [wait] call. Future calls to [wait] will immediately return the given value.
      *
      * A gate can only be opened once. Attempting to call [open] twice will result in an [IllegalStateException].
@@ -61,7 +81,7 @@ class Gate<T> {
      * @throws IllegalStateException When the gate is already open.
      */
     fun open(value: T) {
-        if (!tryOpen(value)) {
+        if (!flow.compareAndSet(Closed, Open(value))) {
             throw IllegalStateException("Double open")
         }
     }
@@ -74,6 +94,45 @@ class Gate<T> {
      */
     fun tryOpen(value: T): Boolean {
         return flow.compareAndSet(Closed, Open(value))
+    }
+
+
+    /**
+     * Closes the gate. Coroutines that called [waitClosed] will be continued. Future calls to [waitClosed] will immediately return the given value.
+     * Future calls to [wait] will suspend until the gate is reopened again. This method returns the value the gate was opened with.
+     *
+     * A gate can only be closed once. Attempting to close twice in a row without opening in between will result in an [IllegalStateException].
+     *
+     * @return The value that the gate was last opened with.
+     * @throws IllegalStateException When the gate is already closed.
+     */
+    fun close(): T {
+        val state = closeInternal() ?: throw IllegalStateException("Double close")
+        return state.value
+    }
+
+    /**
+     * Attempts to close the [Gate], as per [close]. However, unlike [close], this method will not throw when the gate is already closed.
+     *
+     * @return True if the gate was successfully closed. False if the gate was already closed.
+     */
+    fun tryClose(): Boolean {
+        return closeInternal() != null
+    }
+
+    /**
+     * Attempts to close the [Gate], as per [close]. However, unlike [close], this method will not throw when the gate is already closed.
+     * This method returns the value the gate was opened with, or null if the gate was already closed. Note that if a gate accepts `null` values, and
+     * it was opened with a `null` value, then this method will also return `null`.
+     *
+     * @return The value that the gate was opened with, or null if the gate was not open.
+     */
+    fun closeOrNull(): T? {
+        return closeInternal()?.value
+    }
+
+    private fun closeInternal(): Open<T>? {
+        return flow.getAndUpdate { Closed } as? Open<T>
     }
 
     private sealed interface State<in T>

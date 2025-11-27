@@ -1,17 +1,15 @@
 package net.foxboi.stickerbot.sticker
 
-import kotlinx.io.IOException
-import kotlinx.io.Sink
-import kotlinx.io.Source
-import kotlinx.io.readByteArray
+import kotlinx.io.*
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
+import java.util.zip.GZIPInputStream
 
 fun interface StickerConverter {
     suspend fun convert(from: Source, to: Sink)
 }
 
-object IdentityConverter : StickerConverter {
+object Copy : StickerConverter {
     override suspend fun convert(from: Source, to: Sink) {
         from.transferTo(to)
     }
@@ -35,7 +33,16 @@ abstract class ImageConverter(
     }
 }
 
-object WebpConverter : ImageConverter(EncodedImageFormat.WEBP)
-object PngConverter : ImageConverter(EncodedImageFormat.PNG)
-object JpegConverter : ImageConverter(EncodedImageFormat.JPEG, 90)
-object BmpConverter : ImageConverter(EncodedImageFormat.BMP)
+object ToWebp : ImageConverter(EncodedImageFormat.WEBP)
+object ToPng : ImageConverter(EncodedImageFormat.PNG)
+object ToJpeg : ImageConverter(EncodedImageFormat.JPEG, 90)
+object ToBmp : ImageConverter(EncodedImageFormat.BMP)
+
+
+object GUnzip : StickerConverter {
+    override suspend fun convert(from: Source, to: Sink) {
+        GZIPInputStream(from.asInputStream()).asSource().use {
+            to.transferFrom(it)
+        }
+    }
+}

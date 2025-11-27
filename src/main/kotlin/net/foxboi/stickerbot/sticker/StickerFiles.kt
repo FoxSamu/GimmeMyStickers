@@ -111,7 +111,7 @@ class StickerFiles(
         }
     }
 
-    fun uploadOrNull(name: String, contentType: ContentType, rename: String? = null): Upload? {
+    fun uploadOrNull(name: String, contentType: ContentType? = null, rename: String? = null): Upload? {
         val path = path(name)
 
         if (fs.exists(path)) {
@@ -125,7 +125,7 @@ class StickerFiles(
         return null
     }
 
-    fun upload(name: String, contentType: ContentType, rename: String? = null): Upload {
+    fun upload(name: String, contentType: ContentType? = null, rename: String? = null): Upload {
         return uploadOrNull(name, contentType, rename) ?: throw FileNotFoundException(name)
     }
 

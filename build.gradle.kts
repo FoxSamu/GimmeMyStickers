@@ -11,6 +11,14 @@ plugins {
 group = "net.foxboi"
 version = "0.1"
 
+val buildInfoDir = layout.buildDirectory.dir("buildInfo")
+
+sourceSets {
+    main {
+        kotlin.srcDir(buildInfoDir)
+    }
+}
+
 repositories {
     mavenCentral()
     maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
@@ -79,4 +87,37 @@ tasks.run.configure {
 
 tasks.test.configure {
     useJUnitPlatform()
+}
+
+tasks.compileKotlin.configure {
+    dependsOn("buildInfo")
+}
+
+tasks.register("buildInfo") {
+    inputs.property("group", project.group)
+    inputs.property("name", project.name)
+    inputs.property("version", project.version)
+
+    outputs.dir(buildInfoDir)
+
+    doLast {
+        val file = file(buildInfoDir.get().file("BuildInfo.kt"))
+        val group = inputs.properties["group"] as String
+        val name = inputs.properties["name"] as String
+        val version = inputs.properties["version"] as String
+
+        file.parentFile?.mkdirs()
+
+        file.writeText(
+            """
+            package net.foxboi.stickerbot
+            
+            object BuildInfo {
+                const val GROUP = "$group"
+                const val NAME = "$name"
+                const val VERSION = "$version"
+            }
+        """.trimIndent()
+        )
+    }
 }

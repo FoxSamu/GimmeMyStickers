@@ -7,10 +7,14 @@ heavy develompent.
 Current development status:
 
 - You can send it a sticker and it will convert this sticker to the desired format.
-- The desired format can be set with commands.
-- It will treat `.tgs` and `.webm` stickers as `.webp` and tries to convert them, without success.
-- When it reads `stop` from stdin, it will stop.
-- When it reads `halt` from stdin, it will stop faster.
+    - Animated stickers are supported but the tools to convert/render these are currently lacking.
+    - It will unzip `.tgs` stickers to `.json` files and send those, so they can be directly given to any Lottie animation renderers.
+    - It will directly upload `.webm` stickers without conversion.
+- The desired image format can be set with commands.
+- User preferences are persisted under a hash of the user ID, so that the preferences cannot be traced back to the user.
+- When you type `stop` in the standard input of the bot, it will stop the bot.
+
+I consider it nearly done for an early beta release.
 
 ## Usage
 To build and run the bot from source:

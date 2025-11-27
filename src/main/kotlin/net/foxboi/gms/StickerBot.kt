@@ -7,6 +7,7 @@ import net.foxboi.gms.sticker.*
 import net.foxboi.gms.sticker.StickerFormat
 import net.foxboi.gms.storage.FileStorage
 import net.foxboi.gms.util.TgSticker
+import net.foxboi.stickerbot.BuildInfo
 import java.security.MessageDigest
 import kotlin.io.encoding.Base64
 

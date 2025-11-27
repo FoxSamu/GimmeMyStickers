@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 class ConditionTest {
     @Test
     fun testCondition(): Unit = runBlocking {
-        val cond = Signal()
+        val cond = Signal<Unit>()
         var value = 0
 
         launch {
@@ -39,7 +39,7 @@ class ConditionTest {
 
     @Test
     fun testConditionWithNoSubscriptions(): Unit = runBlocking {
-        val cond = Signal()
+        val cond = Signal<Unit>()
 
         cond.signal()
         cond.signal()

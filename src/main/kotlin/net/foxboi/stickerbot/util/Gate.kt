@@ -2,9 +2,7 @@
 
 package net.foxboi.stickerbot.util
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.dropWhile
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.*
 
 /**
  * A gate is a synchronization structure that allows coroutines to [wait] until the gate is opened through a call to [open]. Coroutines that call
@@ -14,6 +12,9 @@ import kotlinx.coroutines.flow.first
  * [Gate] is similar to [Signal] in the sense that it allows multiple coroutines to wait for a call from elsewhere. However, unlike a signal, a gate
  * does not allow multiple "calls from elsewhere" and instead lets all future coroutines continue immediately. Additionally, a gate has a state,
  * whereas a signal does not.
+ *
+ * A gate is also similar to a [java.util.concurrent.CompletableFuture] as it allows coroutines to wait for a value that is set later. However, [Gate]
+ * is much simpler and only implements a suspending call to await the result. It is merely meant as a synchronization structure, not as a future.
  *
  * One may see a gate as an unfinished road.
  * It is closed by default as it is unfinished. Traffic (coroutines calling [wait]) has to wait for the road to be finished.
@@ -99,4 +100,11 @@ fun Gate<Unit>.open() {
  */
 fun Gate<Unit>.tryOpen(): Boolean {
     return tryOpen(Unit)
+}
+
+/**
+ * Returns a [Flow] that will emit the value of the receiving gate once that gate opens. This is equivalent to `flow { emit(gate.wait()) }`.
+ */
+fun <T> Gate<T>.asFlow(): Flow<T> {
+    return flow { emit(wait()) }
 }

@@ -110,6 +110,7 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
             "/webp" -> preference { it.wants(webp = true) }
             "/bmp" -> preference { it.wants(bmp = true) }
             "/all" -> preference { it.wants(png = true, jpeg = true, webp = true, bmp = true) }
+            "/resetcount" -> preference { it.resetFileCounter() }
             "/help" -> help()
             "/start" -> start()
         }
@@ -226,11 +227,13 @@ object StickerBot : UpdateListener, LifecycleListener, ExceptionHandler {
                 /jpeg: Get subsequent stickers stickers as JPEG.
                 /bmp: Get subsequent stickers stickers as BMP.
                 /webp: Get subsequent stickers stickers as WEBP.
+                /resetcount: Resets the file name counter.
                 /all: Get subsequent stickers stickers in every format.
                 /help: Receive this help message.
                 
                 **About:**
                 GimmeMyStickers is a free and open source Telegram bot that converts stickers to files so you can download them. It does not send advertismenets or any other unwanted messages and has no paid features.
+                Running version ${BuildInfo.VERSION}.
             """.trimIndent()
         )
     }
